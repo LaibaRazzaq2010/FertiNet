@@ -1,0 +1,52 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier
+import joblib
+import os
+
+# === Load Data ===
+train = pd.read_csv("data/train.csv")
+test = pd.read_csv("data/test.csv")
+
+# === Preprocessing ===
+def clean_cols(df):
+    df.columns = df.columns.str.strip().str.replace("Temparature", "Temperature").str.replace("Humidity ", "Humidity")
+    return df.rename(columns=lambda x: x.strip().replace(" ", "_"))
+
+train = clean_cols(train)
+test = clean_cols(test)
+
+# Encode categorical features
+cat_cols = train.select_dtypes(include='object').columns.tolist()
+cat_cols = [col for col in cat_cols if col != 'Fertilizer_Name']
+encoders = {}
+for col in cat_cols:
+    le = LabelEncoder()
+    train[col] = le.fit_transform(train[col].astype(str))
+    test[col] = le.transform(test[col].astype(str))
+    encoders[col] = le
+
+# Encode target
+target = 'Fertilizer_Name'
+fer_le = LabelEncoder()
+train[target] = fer_le.fit_transform(train[target])
+
+# === Training Model ===
+features = [col for col in train.columns if col not in ['id', 'Fertilizer_Name']]
+X = train[features]
+y = train[target]
+
+model = XGBClassifier(n_estimators=300, max_depth=6, learning_rate=0.1, 
+                      use_label_encoder=False, eval_metric='mlogloss', tree_method='hist', random_state=42)
+model.fit(X, y)
+
+# Save model and encoder
+os.makedirs("models", exist_ok=True)
+joblib.dump(model, "models/fertilizer_model.pkl")
+joblib.dump(fer_le, "models/target_encoder.pkl")
+for col, le in encoders.items():
+    joblib.dump(le, f"models/le_{col}.pkl")
+
+print("✅ Model trained and saved successfully.")
